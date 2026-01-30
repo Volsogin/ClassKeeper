@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Панель управления - ClassKeeper</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/navbar.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <h2>🎓 ClassKeeper</h2>
+        </div>
+        <div class="navbar-menu">
+            <a href="/pages/dashboard.html" class="active">Главная</a>
+            <a href="/pages/classes.html">Классы</a>
+            <a href="/pages/schedule.html">Расписание</a>
+            <a href="/pages/grades.html">Оценки</a>
+            <a href="/pages/attendance.html">Посещаемость</a>
+            <a href="/pages/homework.html">Домашние задания</a>
+            <a href="/pages/announcements.html">Объявления</a>
+            <a href="/pages/analytics.html">Аналитика</a>
+        </div>
+        <div class="navbar-user">
+            <span id="user-name"></span>
+            <button onclick="logout()" class="btn btn-secondary">Выход</button>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <div class="dashboard-header">
+            <h1>Панель управления</h1>
+            <p id="school-name"></p>
+        </div>
+
+        <!-- Статистика -->
+        <div class="stats-grid" id="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">👥</div>
+                <div class="stat-info">
+                    <h3 id="total-students">-</h3>
+                    <p>Учеников</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">👨‍🏫</div>
+                <div class="stat-info">
+                    <h3 id="total-teachers">-</h3>
+                    <p>Учителей</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🏫</div>
+                <div class="stat-info">
+                    <h3 id="total-classes">-</h3>
+                    <p>Классов</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">📚</div>
+                <div class="stat-info">
+                    <h3 id="total-subjects">-</h3>
+                    <p>Предметов</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Быстрые действия -->
+        <div class="quick-actions">
+            <h2>Быстрые действия</h2>
+            <div class="actions-grid" id="quick-actions">
+                <!-- Заполнится динамически в зависимости от роли -->
+            </div>
+        </div>
+
+        <!-- Последние объявления -->
+        <div class="recent-section">
+            <h2>Последние объявления</h2>
+            <div id="recent-announcements" class="announcements-list">
+                <p class="loading">Загрузка...</p>
+            </div>
+        </div>
+
+        <!-- Предстоящие события для родителей -->
+        <div class="recent-section" id="parent-section" style="display: none;">
+            <h2>Мои дети</h2>
+            <div id="children-list" class="children-grid">
+                <p class="loading">Загрузка...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api';
+        let token = localStorage.getItem('token');
+        let currentUser = null;
+
+        // Проверка авторизации
+        if (!token) {
+            window.location.href = '/';
+        }
+
+        // Загрузка данных при загрузке страницы
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadCurrentUser();
+            await loadStats();
+            await loadAnnouncements();
+            loadQuickActions();
+            
+            if (currentUser.role === 'parent') {
+                await loadChildren();
+            }
+        });
+
+        // Загрузка текущего пользователя
+        async function loadCurrentUser() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/me`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    currentUser = data.user;
+                    document.getElementById('user-name').textContent = 
+                        `${currentUser.first_name} ${currentUser.last_name} (${getRoleName(currentUser.role)})`;
+                } else {
+                    logout();
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                logout();
+            }
+        }
+
+        // Загрузка статистики
+        async function loadStats() {
+            try {
+                const response = await fetch(`${API_BASE}/analytics/school`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const stats = data.stats;
+                    
+                    document.getElementById('total-students').textContent = stats.TotalStudents || 0;
+                    document.getElementById('total-teachers').textContent = stats.TotalTeachers || 0;
+                    document.getElementById('total-classes').textContent = stats.TotalClasses || 0;
+                    document.getElementById('total-subjects').textContent = stats.TotalSubjects || 0;
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки статистики:', error);
+            }
+        }
+
+        // Загрузка объявлений
+        async function loadAnnouncements() {
+            try {
+                const response = await fetch(`${API_BASE}/announcements?limit=5`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const container = document.getElementById('recent-announcements');
+                    
+                    if (data.announcements && data.announcements.length > 0) {
+                        container.innerHTML = data.announcements.map(a => `
+                            <div class="announcement-card">
+                                <h3>${a.title}</h3>
+                                <p>${a.content}</p>
+                                <div class="announcement-meta">
+                                    <span>👤 ${a.author?.first_name} ${a.author?.last_name}</span>
+                                    <span>📅 ${new Date(a.created_at).toLocaleDateString('ru-RU')}</span>
+                                </div>
+                            </div>
+                        `).join('');
+                    } else {
+                        container.innerHTML = '<p class="empty-state">Нет объявлений</p>';
+                    }
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки объявлений:', error);
+            }
+        }
+
+        // Загрузка детей для родителя
+        async function loadChildren() {
+            const section = document.getElementById('parent-section');
+            section.style.display = 'block';
+            
+            try {
+                const response = await fetch(`${API_BASE}/parents/children`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const container = document.getElementById('children-list');
+                    
+                    if (data.children && data.children.length > 0) {
+                        container.innerHTML = data.children.map(child => `
+                            <div class="child-card">
+                                <h3>👤 ${child.first_name} ${child.last_name}</h3>
+                                <button onclick="viewChildGrades(${child.id})" class="btn btn-sm">Оценки</button>
+                                <button onclick="viewChildAttendance(${child.id})" class="btn btn-sm">Посещаемость</button>
+                            </div>
+                        `).join('');
+                    } else {
+                        container.innerHTML = '<p class="empty-state">Дети не добавлены</p>';
+                    }
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки детей:', error);
+            }
+        }
+
+        // Быстрые действия в зависимости от роли
+        function loadQuickActions() {
+            const container = document.getElementById('quick-actions');
+            const actions = {
+                admin: [
+                    { icon: '➕', text: 'Добавить пользователя', link: '/static/pages/users.html' },
+                    { icon: '🏫', text: 'Управление классами', link: '/static/pages/classes.html' },
+                    { icon: '📊', text: 'Аналитика', link: '/static/pages/analytics.html' },
+                    { icon: '⚙️', text: 'Настройки', link: '/static/pages/settings.html' }
+                ],
+                teacher: [
+                    { icon: '📝', text: 'Выставить оценки', link: '/static/pages/grades.html' },
+                    { icon: '✅', text: 'Отметить посещаемость', link: '/static/pages/attendance.html' },
+                    { icon: '📚', text: 'Задать ДЗ', link: '/static/pages/homework.html' },
+                    { icon: '📢', text: 'Создать объявление', link: '/static/pages/announcements.html' }
+                ],
+                student: [
+                    { icon: '📖', text: 'Расписание', link: '/static/pages/schedule.html' },
+                    { icon: '📊', text: 'Мои оценки', link: '/static/pages/grades.html' },
+                    { icon: '📚', text: 'Домашние задания', link: '/static/pages/homework.html' },
+                    { icon: '📢', text: 'Объявления', link: '/static/pages/announcements.html' }
+                ],
+                parent: [
+                    { icon: '👥', text: 'Мои дети', action: 'scrollToChildren' },
+                    { icon: '📊', text: 'Успеваемость', link: '/static/pages/grades.html' },
+                    { icon: '📢', text: 'Объявления', link: '/static/pages/announcements.html' }
+                ]
+            };
+
+            const userActions = actions[currentUser.role] || actions.student;
+            
+            container.innerHTML = userActions.map(action => `
+                <div class="action-card" onclick="${action.link ? `location.href='${action.link}'` : action.action + '()'}">
+                    <div class="action-icon">${action.icon}</div>
+                    <p>${action.text}</p>
+                </div>
+            `).join('');
+        }
+
+        function viewChildGrades(childId) {
+            window.location.href = `/static/pages/grades.html?student_id=${childId}`;
+        }
+
+        function viewChildAttendance(childId) {
+            window.location.href = `/static/pages/attendance.html?student_id=${childId}`;
+        }
+
+        function scrollToChildren() {
+            document.getElementById('parent-section').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function getRoleName(role) {
+            const roles = {
+                admin: 'Администратор',
+                teacher: 'Учитель',
+                student: 'Ученик',
+                parent: 'Родитель',
+                starosta: 'Староста'
+            };
+            return roles[role] || role;
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>

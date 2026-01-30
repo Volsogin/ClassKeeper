@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Домашние задания - ClassKeeper</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/navbar.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand"><h2>🎓 ClassKeeper</h2></div>
+        <div class="navbar-menu">
+            <a href="/pages/dashboard.html">Главная</a>
+            <a href="/pages/users.html">Пользователи</a>
+            <a href="/pages/subjects.html">Предметы</a>
+            <a href="/pages/classes.html">Классы</a>
+            <a href="/pages/schedule.html">Расписание</a>
+            <a href="/pages/grades.html">Оценки</a>
+            <a href="/pages/attendance.html">Посещаемость</a>
+            <a href="/pages/homework.html" class="active">Домашние задания</a>
+            <a href="/pages/announcements.html">Объявления</a>
+            <a href="/pages/analytics.html">Аналитика</a>
+        </div>
+        <div class="navbar-user">
+            <span id="user-name"></span>
+            <button onclick="logout()" class="btn btn-secondary">Выход</button>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <div class="dashboard-header">
+            <h1>📚 Домашние задания</h1>
+            <button onclick="openCreateModal()" class="btn btn-primary">➕ Создать ДЗ</button>
+        </div>
+
+        <div id="homework-list"></div>
+    </div>
+
+    <div id="create-modal" class="modal">
+        <div class="modal-content">
+            <h2>Создать домашнее задание</h2>
+            <form id="create-form">
+                <div class="form-group">
+                    <label>Класс *</label>
+                    <select id="class-id" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Предмет *</label>
+                    <select id="subject-id" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Дата выдачи *</label>
+                    <input type="date" id="assigned-date" required>
+                </div>
+                <div class="form-group">
+                    <label>Срок сдачи *</label>
+                    <input type="date" id="due-date" required>
+                </div>
+                <div class="form-group">
+                    <label>Описание задания *</label>
+                    <textarea id="description" rows="5" required placeholder="Параграф 15, упражнения 1-10"></textarea>
+                </div>
+                <div class="btn-group">
+                    <button type="submit" class="btn btn-primary">Создать</button>
+                    <button type="button" onclick="closeCreateModal()" class="btn btn-secondary">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api';
+        let token = localStorage.getItem('token');
+        if (!token) window.location.href = '/';
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            document.getElementById('assigned-date').valueAsDate = new Date();
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 7);
+            document.getElementById('due-date').valueAsDate = tomorrow;
+            await loadHomework();
+        });
+
+        async function loadHomework() {
+            const response = await fetch(`${API_BASE}/homework`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                renderHomework(data.homework || []);
+            }
+        }
+
+        function renderHomework(homework) {
+            const container = document.getElementById('homework-list');
+            if (homework.length === 0) {
+                container.innerHTML = '<p style="text-align:center;color:#999;margin-top:40px;">Домашних заданий пока нет</p>';
+                return;
+            }
+
+            container.innerHTML = homework.map(h => {
+                const dueDate = new Date(h.due_date);
+                const isOverdue = dueDate < new Date();
+                return `
+                    <div style="background:white;border-radius:12px;padding:20px;margin:15px 0;border-left:5px solid ${isOverdue ? '#ff6b6b' : '#667eea'};">
+                        <div style="display:flex;justify-content:space-between;align-items:start;">
+                            <div>
+                                <h3>${h.subject?.name || 'Предмет'} - ${h.class?.name || 'Класс'}</h3>
+                                <p style="color:#666;margin:10px 0;">${h.description}</p>
+                                <p style="font-size:0.9rem;color:#999;">
+                                    Задано: ${new Date(h.assigned_date).toLocaleDateString('ru-RU')} | 
+                                    Срок: ${dueDate.toLocaleDateString('ru-RU')} ${isOverdue ? '⚠️ Просрочено' : ''}
+                                </p>
+                            </div>
+                            <button onclick="deleteHomework(${h.id})" class="btn btn-sm" style="background:#ff6b6b;">🗑️</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function openCreateModal() {
+            const classesRes = await fetch(`${API_BASE}/classes`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (classesRes.ok) {
+                const data = await classesRes.json();
+                const select = document.getElementById('class-id');
+                select.innerHTML = '<option value="">Выберите класс</option>';
+                data.classes.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name;
+                    select.appendChild(opt);
+                });
+            }
+
+            const subjectsRes = await fetch(`${API_BASE}/subjects`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (subjectsRes.ok) {
+                const data = await subjectsRes.json();
+                const select = document.getElementById('subject-id');
+                select.innerHTML = '<option value="">Выберите предмет</option>';
+                data.subjects.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = s.name;
+                    select.appendChild(opt);
+                });
+            }
+
+            document.getElementById('create-modal').style.display = 'block';
+        }
+
+        function closeCreateModal() {
+            document.getElementById('create-modal').style.display = 'none';
+            document.getElementById('create-form').reset();
+        }
+
+        document.getElementById('create-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const homeworkData = {
+                class_id: parseInt(document.getElementById('class-id').value),
+                subject_id: parseInt(document.getElementById('subject-id').value),
+                assigned_date: document.getElementById('assigned-date').value,
+                due_date: document.getElementById('due-date').value,
+                description: document.getElementById('description').value
+            };
+
+            const response = await fetch(`${API_BASE}/homework`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(homeworkData)
+            });
+
+            if (response.ok) {
+                alert('✅ Домашнее задание создано!');
+                closeCreateModal();
+                loadHomework();
+            } else {
+                const error = await response.json();
+                alert('❌ Ошибка: ' + (error.error || 'Не удалось создать'));
+            }
+        });
+
+        async function deleteHomework(id) {
+            if (!confirm('Удалить ДЗ?')) return;
+
+            const response = await fetch(`${API_BASE}/homework/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                alert('✅ ДЗ удалено!');
+                loadHomework();
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Пользователи - ClassKeeper</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <style>
+        .users-table {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        tr:hover {
+            background: #f9f9f9;
+        }
+        .role-badge {
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        .role-admin { background: #ff6b6b; color: white; }
+        .role-teacher { background: #4ecdc4; color: white; }
+        .role-student { background: #45b7d1; color: white; }
+        .role-parent { background: #96ceb4; color: white; }
+        .role-starosta { background: #ffeaa7; color: #333; }
+        .filter-bar {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+        .filter-bar select {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+    </style>
+    <script src="/js/navbar.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand"><h2>🎓 ClassKeeper</h2></div>
+        <div class="navbar-menu">
+            <a href="/pages/dashboard.html">Главная</a>
+            <a href="/pages/users.html" class="active">Пользователи</a>
+            <a href="/pages/classes.html">Классы</a>
+            <a href="/pages/schedule.html">Расписание</a>
+            <a href="/pages/grades.html">Оценки</a>
+        </div>
+        <div class="navbar-user">
+            <span id="user-name"></span>
+            <button onclick="logout()" class="btn btn-secondary">Выход</button>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <div class="dashboard-header">
+            <h1>Управление пользователями</h1>
+            <button onclick="openCreateModal()" class="btn btn-primary">➕ Добавить пользователя</button>
+        </div>
+
+        <div class="filter-bar">
+            <label>Фильтр по роли:</label>
+            <select id="role-filter" onchange="loadUsers()">
+                <option value="">Все</option>
+                <option value="admin">Администраторы</option>
+                <option value="teacher">Учителя</option>
+                <option value="student">Ученики</option>
+                <option value="parent">Родители</option>
+                <option value="starosta">Старосты</option>
+            </select>
+        </div>
+
+        <div class="users-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>ФИО</th>
+                        <th>Username</th>
+                        <th>Email</th>
+                        <th>Роль</th>
+                        <th>Предмет</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody id="users-tbody">
+                    <tr><td colspan="7" style="text-align:center;">Загрузка...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания -->
+    <div id="create-modal" class="modal">
+        <div class="modal-content">
+            <h2>Добавить пользователя</h2>
+            <form id="create-form">
+                <div class="form-group">
+                    <label>Имя *</label>
+                    <input type="text" id="first-name" required>
+                </div>
+                <div class="form-group">
+                    <label>Фамилия *</label>
+                    <input type="text" id="last-name" required>
+                </div>
+                <div class="form-group">
+                    <label>Отчество</label>
+                    <input type="text" id="middle-name">
+                </div>
+                <div class="form-group">
+                    <label>Username *</label>
+                    <input type="text" id="username" required>
+                </div>
+                <div class="form-group">
+                    <label>Email *</label>
+                    <input type="email" id="email" required>
+                </div>
+                <div class="form-group">
+                    <label>Пароль *</label>
+                    <input type="password" id="password" minlength="6" required>
+                </div>
+                <div class="form-group">
+                    <label>Роль *</label>
+                    <select id="role" required onchange="toggleTeacherField()">
+                        <option value="student">Ученик</option>
+                        <option value="teacher">Учитель</option>
+                        <option value="parent">Родитель</option>
+                        <option value="admin">Администратор</option>
+                    </select>
+                </div>
+                <div class="form-group" id="teacher-subject-group" style="display:none;">
+                    <label>Предмет *</label>
+                    <select id="teacher-subject">
+                        <option value="">Загрузка...</option>
+                    </select>
+                </div>
+                <div class="btn-group">
+                    <button type="submit" class="btn btn-primary">Создать</button>
+                    <button type="button" onclick="closeCreateModal()" class="btn btn-secondary">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api';
+        let token = localStorage.getItem('token');
+        let currentUser = null;
+
+        if (!token) window.location.href = '/';
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadCurrentUser();
+            await loadUsers();
+        });
+
+        async function loadCurrentUser() {
+            const response = await fetch(`${API_BASE}/auth/me`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                currentUser = data.user;
+                document.getElementById('user-name').textContent = `${currentUser.first_name} ${currentUser.last_name}`;
+            } else {
+                logout();
+            }
+        }
+
+        async function loadUsers() {
+            const role = document.getElementById('role-filter').value;
+            const url = role ? `${API_BASE}/users?role=${role}` : `${API_BASE}/users`;
+            
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                const tbody = document.getElementById('users-tbody');
+                
+                if (data.users && data.users.length > 0) {
+                    tbody.innerHTML = data.users.map(u => `
+                        <tr>
+                            <td>${u.id}</td>
+                            <td>${u.last_name} ${u.first_name} ${u.middle_name || ''}</td>
+                            <td>${u.username}</td>
+                            <td>${u.email}</td>
+                            <td><span class="role-badge role-${u.role}">${getRoleName(u.role)}</span></td>
+                            <td>
+                                ${u.role === 'teacher' && u.teacher_subject 
+                                    ? `<span style="background:#667eea; color:white; padding:4px 8px; border-radius:5px; font-size:0.85rem;">📚 ${u.teacher_subject}</span>` 
+                                    : '<span style="color:#999;">-</span>'
+                                }
+                            </td>
+                            <td>
+                                <button onclick="deleteUser(${u.id})" class="btn btn-sm" style="background:#ff6b6b">🗑️</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Пользователей не найдено</td></tr>';
+                }
+            }
+        }
+
+        function getRoleName(role) {
+            const names = {
+                admin: 'Админ',
+                teacher: 'Учитель',
+                student: 'Ученик',
+                parent: 'Родитель',
+                starosta: 'Староста'
+            };
+            return names[role] || role;
+        }
+
+        function openCreateModal() {
+            document.getElementById('create-modal').style.display = 'block';
+        }
+
+        function closeCreateModal() {
+            document.getElementById('create-modal').style.display = 'none';
+            document.getElementById('create-form').reset();
+        }
+
+        document.getElementById('create-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const data = {
+                username: document.getElementById('username').value,
+                email: document.getElementById('email').value,
+                password: document.getElementById('password').value,
+                role: document.getElementById('role').value,
+                first_name: document.getElementById('first-name').value,
+                last_name: document.getElementById('last-name').value,
+                middle_name: document.getElementById('middle-name').value
+            };
+            
+            // Добавляем предмет если учитель
+            if (data.role === 'teacher') {
+                const teacherSubject = document.getElementById('teacher-subject').value;
+                if (teacherSubject) {
+                    data.teacher_subject = teacherSubject;
+                }
+            }
+            
+            const response = await fetch(`${API_BASE}/users`, {  // Изменено с /auth/register
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+            
+            if (response.ok) {
+                alert('Пользователь создан!');
+                closeCreateModal();
+                await loadUsers();
+            } else {
+                const error = await response.json();
+                alert('Ошибка: ' + (error.error || 'Не удалось создать'));
+            }
+        });
+
+        async function deleteUser(id) {
+            if (!confirm('Удалить пользователя?')) return;
+            
+            const response = await fetch(`${API_BASE}/users/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (response.ok) {
+                alert('Пользователь удалён!');
+                await loadUsers();
+            } else {
+                alert('Ошибка удаления');
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        }
+
+        function toggleTeacherField() {
+            const role = document.getElementById('role').value;
+            const group = document.getElementById('teacher-subject-group');
+            
+            if (role === 'teacher') {
+                group.style.display = 'block';
+                loadSubjectsForTeacher();
+            } else {
+                group.style.display = 'none';
+            }
+        }
+
+        async function loadSubjectsForTeacher() {
+            const response = await fetch(`${API_BASE}/subjects`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const select = document.getElementById('teacher-subject');
+                
+                if (data.subjects && data.subjects.length > 0) {
+                    select.innerHTML = '<option value="">Выберите предмет</option>' + 
+                        data.subjects.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
+                } else {
+                    select.innerHTML = '<option value="">Сначала создайте предметы</option>';
+                }
+            }
+        }
+    </script>
+</body>
+</html>

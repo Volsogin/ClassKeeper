@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Аналитика - ClassKeeper</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/navbar.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand"><h2>🎓 ClassKeeper</h2></div>
+        <div class="navbar-menu">
+            <a href="/pages/dashboard.html">Главная</a>
+            <a href="/pages/users.html">Пользователи</a>
+            <a href="/pages/subjects.html">Предметы</a>
+            <a href="/pages/classes.html">Классы</a>
+            <a href="/pages/schedule.html">Расписание</a>
+            <a href="/pages/grades.html">Оценки</a>
+            <a href="/pages/attendance.html">Посещаемость</a>
+            <a href="/pages/homework.html">Домашние задания</a>
+            <a href="/pages/announcements.html">Объявления</a>
+            <a href="/pages/analytics.html" class="active">Аналитика</a>
+        </div>
+        <div class="navbar-user">
+            <span id="user-name"></span>
+            <button onclick="logout()" class="btn btn-secondary">Выход</button>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <h1>📈 Аналитика</h1>
+        <div id="stats-container" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px;margin-top:30px;"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api';
+        let token = localStorage.getItem('token');
+        if (!token) window.location.href = '/';
+
+        document.addEventListener('DOMContentLoaded', loadStats);
+
+        async function loadStats() {
+            const container = document.getElementById('stats-container');
+            
+            // Пользователи
+            const usersRes = await fetch(`${API_BASE}/users`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const usersData = await usersRes.json();
+            const users = usersData.users || [];
+
+            // Классы
+            const classesRes = await fetch(`${API_BASE}/classes`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const classesData = await classesRes.json();
+            const classes = classesData.classes || [];
+
+            // Предметы
+            const subjectsRes = await fetch(`${API_BASE}/subjects`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const subjectsData = await subjectsRes.json();
+            const subjects = subjectsData.subjects || [];
+
+            // Домашние задания
+            const homeworkRes = await fetch(`${API_BASE}/homework`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const homeworkData = await homeworkRes.json();
+            const homework = homeworkData.homework || [];
+
+            container.innerHTML = `
+                <div class="stat-card" style="background:#667eea;color:white;padding:30px;border-radius:12px;text-align:center;">
+                    <h2 style="font-size:3rem;margin:0;">${users.filter(u => u.role === 'student').length}</h2>
+                    <p style="margin:10px 0 0 0;font-size:1.2rem;">Учеников</p>
+                </div>
+                <div class="stat-card" style="background:#51cf66;color:white;padding:30px;border-radius:12px;text-align:center;">
+                    <h2 style="font-size:3rem;margin:0;">${users.filter(u => u.role === 'teacher').length}</h2>
+                    <p style="margin:10px 0 0 0;font-size:1.2rem;">Учителей</p>
+                </div>
+                <div class="stat-card" style="background:#ffd43b;color:#1a1a1a;padding:30px;border-radius:12px;text-align:center;">
+                    <h2 style="font-size:3rem;margin:0;">${classes.length}</h2>
+                    <p style="margin:10px 0 0 0;font-size:1.2rem;">Классов</p>
+                </div>
+                <div class="stat-card" style="background:#ff6b6b;color:white;padding:30px;border-radius:12px;text-align:center;">
+                    <h2 style="font-size:3rem;margin:0;">${subjects.length}</h2>
+                    <p style="margin:10px 0 0 0;font-size:1.2rem;">Предметов</p>
+                </div>
+                <div class="stat-card" style="background:#4dabf7;color:white;padding:30px;border-radius:12px;text-align:center;">
+                    <h2 style="font-size:3rem;margin:0;">${homework.length}</h2>
+                    <p style="margin:10px 0 0 0;font-size:1.2rem;">Домашних заданий</p>
+                </div>
+                <div class="stat-card" style="background:#f59f00;color:white;padding:30px;border-radius:12px;text-align:center;">
+                    <h2 style="font-size:3rem;margin:0;">${users.filter(u => u.role === 'parent').length}</h2>
+                    <p style="margin:10px 0 0 0;font-size:1.2rem;">Родителей</p>
+                </div>
+            `;
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>

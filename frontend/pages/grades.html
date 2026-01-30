@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Оценки - ClassKeeper</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/navbar.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand"><h2>🎓 ClassKeeper</h2></div>
+        <div class="navbar-menu">
+            <a href="/pages/dashboard.html">Главная</a>
+            <a href="/pages/users.html">Пользователи</a>
+            <a href="/pages/subjects.html">Предметы</a>
+            <a href="/pages/classes.html">Классы</a>
+            <a href="/pages/schedule.html">Расписание</a>
+            <a href="/pages/grades.html" class="active">Оценки</a>
+            <a href="/pages/attendance.html">Посещаемость</a>
+            <a href="/pages/homework.html">Домашние задания</a>
+            <a href="/pages/announcements.html">Объявления</a>
+            <a href="/pages/analytics.html">Аналитика</a>
+        </div>
+        <div class="navbar-user">
+            <span id="user-name"></span>
+            <button onclick="logout()" class="btn btn-secondary">Выход</button>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <div class="dashboard-header">
+            <h1>📊 Оценки</h1>
+            <button onclick="openCreateModal()" class="btn btn-primary">➕ Выставить оценку</button>
+        </div>
+
+        <div class="filter-bar">
+            <select id="class-filter" onchange="loadGrades()">
+                <option value="">Все классы</option>
+            </select>
+            <select id="subject-filter" onchange="loadGrades()">
+                <option value="">Все предметы</option>
+            </select>
+        </div>
+
+        <div id="grades-list"></div>
+    </div>
+
+    <!-- Модалка создания -->
+    <div id="create-modal" class="modal">
+        <div class="modal-content">
+            <h2>Выставить оценку</h2>
+            <form id="create-form">
+                <div class="form-group">
+                    <label>Ученик *</label>
+                    <select id="student-id" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Предмет *</label>
+                    <select id="subject-id" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Оценка *</label>
+                    <select id="value" required>
+                        <option value="5">5 (Отлично)</option>
+                        <option value="4">4 (Хорошо)</option>
+                        <option value="3">3 (Удовлетворительно)</option>
+                        <option value="2">2 (Неудовлетворительно)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Дата *</label>
+                    <input type="date" id="date" required>
+                </div>
+                <div class="form-group">
+                    <label>Комментарий</label>
+                    <textarea id="comment" rows="3"></textarea>
+                </div>
+                <div class="btn-group">
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                    <button type="button" onclick="closeCreateModal()" class="btn btn-secondary">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api';
+        let token = localStorage.getItem('token');
+        if (!token) window.location.href = '/';
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadFilters();
+            await loadGrades();
+            document.getElementById('date').valueAsDate = new Date();
+        });
+
+        async function loadFilters() {
+            // Классы
+            const classesRes = await fetch(`${API_BASE}/classes`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (classesRes.ok) {
+                const data = await classesRes.json();
+                const select = document.getElementById('class-filter');
+                data.classes.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name;
+                    select.appendChild(opt);
+                });
+            }
+
+            // Предметы
+            const subjectsRes = await fetch(`${API_BASE}/subjects`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (subjectsRes.ok) {
+                const data = await subjectsRes.json();
+                const select = document.getElementById('subject-filter');
+                data.subjects.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = s.name;
+                    select.appendChild(opt);
+                });
+            }
+        }
+
+        async function loadGrades() {
+            const classId = document.getElementById('class-filter').value;
+            const subjectId = document.getElementById('subject-filter').value;
+            
+            let url = `${API_BASE}/grades?`;
+            if (classId) url += `class_id=${classId}&`;
+            if (subjectId) url += `subject_id=${subjectId}&`;
+
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                renderGrades(data.grades || []);
+            }
+        }
+
+        function renderGrades(grades) {
+            const container = document.getElementById('grades-list');
+            if (grades.length === 0) {
+                container.innerHTML = '<p style="text-align:center;color:#999;margin-top:40px;">Оценок пока нет</p>';
+                return;
+            }
+
+            container.innerHTML = `
+                <table style="width:100%;background:white;border-radius:8px;">
+                    <thead>
+                        <tr>
+                            <th>Дата</th>
+                            <th>Ученик</th>
+                            <th>Предмет</th>
+                            <th>Оценка</th>
+                            <th>Комментарий</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${grades.map(g => `
+                            <tr>
+                                <td>${new Date(g.date).toLocaleDateString('ru-RU')}</td>
+                                <td>${g.student?.last_name} ${g.student?.first_name}</td>
+                                <td>${g.subject?.name || '-'}</td>
+                                <td><span style="background:${getGradeColor(g.grade)};color:white;padding:5px 10px;border-radius:5px;font-weight:bold;">${g.grade}</span></td>
+                                <td>${g.comment || '-'}</td>
+                                <td>
+                                    <button onclick="deleteGrade(${g.id})" class="btn btn-sm" style="background:#ff6b6b;">🗑️</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function getGradeColor(value) {
+            if (value >= 5) return '#51cf66';
+            if (value >= 4) return '#4dabf7';
+            if (value >= 3) return '#ffd43b';
+            return '#ff6b6b';
+        }
+
+        async function openCreateModal() {
+            // Загружаем учеников и предметы
+            const usersRes = await fetch(`${API_BASE}/users?role=student`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (usersRes.ok) {
+                const data = await usersRes.json();
+                const select = document.getElementById('student-id');
+                select.innerHTML = '<option value="">Выберите ученика</option>';
+                data.users.forEach(u => {
+                    const opt = document.createElement('option');
+                    opt.value = u.id;
+                    opt.textContent = `${u.last_name} ${u.first_name}`;
+                    select.appendChild(opt);
+                });
+            }
+
+            const subjectsRes = await fetch(`${API_BASE}/subjects`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (subjectsRes.ok) {
+                const data = await subjectsRes.json();
+                const select = document.getElementById('subject-id');
+                select.innerHTML = '<option value="">Выберите предмет</option>';
+                data.subjects.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = s.name;
+                    select.appendChild(opt);
+                });
+            }
+
+            document.getElementById('create-modal').style.display = 'block';
+        }
+
+        function closeCreateModal() {
+            document.getElementById('create-modal').style.display = 'none';
+            document.getElementById('create-form').reset();
+        }
+
+        document.getElementById('create-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const gradeData = {
+                student_id: parseInt(document.getElementById('student-id').value),
+                subject_id: parseInt(document.getElementById('subject-id').value),
+                grade: parseInt(document.getElementById('value').value),
+                date: document.getElementById('date').value,
+                comment: document.getElementById('comment').value
+            };
+
+            const response = await fetch(`${API_BASE}/grades`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(gradeData)
+            });
+
+            if (response.ok) {
+                alert('✅ Оценка выставлена!');
+                closeCreateModal();
+                loadGrades();
+            } else {
+                const error = await response.json();
+                alert('❌ Ошибка: ' + (error.error || 'Не удалось выставить оценку'));
+            }
+        });
+
+        async function deleteGrade(id) {
+            if (!confirm('Удалить оценку?')) return;
+
+            const response = await fetch(`${API_BASE}/grades/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                alert('✅ Оценка удалена!');
+                loadGrades();
+            } else {
+                alert('❌ Ошибка удаления');
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>

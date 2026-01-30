@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Объявления - ClassKeeper</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/navbar.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand"><h2>🎓 ClassKeeper</h2></div>
+        <div class="navbar-menu">
+            <a href="/pages/dashboard.html">Главная</a>
+            <a href="/pages/users.html">Пользователи</a>
+            <a href="/pages/classes.html">Классы</a>
+            <a href="/pages/announcements.html" class="active">Объявления</a>
+        </div>
+        <div class="navbar-user">
+            <span id="user-name"></span>
+            <button onclick="logout()" class="btn btn-secondary">Выход</button>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <div class="dashboard-header">
+            <h1>📢 Объявления</h1>
+            <button onclick="openCreateModal()" class="btn btn-primary" id="create-btn" style="display:none;">➕ Создать объявление</button>
+        </div>
+
+        <div class="announcements-list" id="announcements-list">
+            <p class="loading">Загрузка...</p>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания -->
+    <div id="create-modal" class="modal">
+        <div class="modal-content">
+            <h2>Создать объявление</h2>
+            <form id="create-form">
+                <div class="form-group">
+                    <label>Заголовок *</label>
+                    <input type="text" id="title" required>
+                </div>
+                <div class="form-group">
+                    <label>Текст объявления *</label>
+                    <textarea id="content" rows="5" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:5px;" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Кому показывать *</label>
+                    <select id="target-role" required>
+                        <option value="all">Всем</option>
+                        <option value="teachers">Учителям</option>
+                        <option value="students">Ученикам</option>
+                        <option value="parents">Родителям</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Класс (опционально)</label>
+                    <select id="target-class">
+                        <option value="">Всем классам</option>
+                    </select>
+                </div>
+                <div class="btn-group">
+                    <button type="submit" class="btn btn-primary">Опубликовать</button>
+                    <button type="button" onclick="closeCreateModal()" class="btn btn-secondary">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api';
+        let token = localStorage.getItem('token');
+        let currentUser = null;
+
+        if (!token) window.location.href = '/';
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadCurrentUser();
+            await loadClasses();
+            await loadAnnouncements();
+        });
+
+        async function loadCurrentUser() {
+            const response = await fetch(`${API_BASE}/auth/me`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                currentUser = data.user;
+                document.getElementById('user-name').textContent = `${data.user.first_name} ${data.user.last_name}`;
+                
+                // Показываем кнопку создания для админа и учителей
+                if (currentUser.role === 'admin' || currentUser.role === 'teacher') {
+                    document.getElementById('create-btn').style.display = 'block';
+                }
+            } else {
+                logout();
+            }
+        }
+
+        async function loadClasses() {
+            const response = await fetch(`${API_BASE}/classes`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                const select = document.getElementById('target-class');
+                if (data.classes) {
+                    data.classes.forEach(c => {
+                        const option = document.createElement('option');
+                        option.value = c.id;
+                        option.textContent = c.name;
+                        select.appendChild(option);
+                    });
+                }
+            }
+        }
+
+        async function loadAnnouncements() {
+            const response = await fetch(`${API_BASE}/announcements`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                const container = document.getElementById('announcements-list');
+                
+                if (data.announcements && data.announcements.length > 0) {
+                    container.innerHTML = data.announcements.map(a => `
+                        <div class="announcement-card">
+                            <h3>${a.title}</h3>
+                            <p>${a.content}</p>
+                            <div class="announcement-meta">
+                                <span>👤 ${a.author?.first_name} ${a.author?.last_name}</span>
+                                <span>📅 ${new Date(a.created_at).toLocaleDateString('ru-RU')}</span>
+                                <span>🎯 ${getTargetName(a.target_role)}</span>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = '<p class="empty-state">Нет объявлений</p>';
+                }
+            }
+        }
+
+        function getTargetName(role) {
+            const names = {
+                all: 'Всем',
+                teachers: 'Учителям',
+                students: 'Ученикам',
+                parents: 'Родителям'
+            };
+            return names[role] || role;
+        }
+
+        function openCreateModal() {
+            document.getElementById('create-modal').style.display = 'block';
+        }
+
+        function closeCreateModal() {
+            document.getElementById('create-modal').style.display = 'none';
+            document.getElementById('create-form').reset();
+        }
+
+        document.getElementById('create-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const data = {
+                title: document.getElementById('title').value,
+                content: document.getElementById('content').value,
+                target_role: document.getElementById('target-role').value
+            };
+            
+            const classId = document.getElementById('target-class').value;
+            if (classId) {
+                data.target_class_id = parseInt(classId);
+            }
+            
+            const response = await fetch(`${API_BASE}/announcements`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+            
+            if (response.ok) {
+                alert('Объявление опубликовано!');
+                closeCreateModal();
+                await loadAnnouncements();
+            } else {
+                const error = await response.json();
+                alert('Ошибка: ' + (error.error || 'Не удалось создать'));
+            }
+        });
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>

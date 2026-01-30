@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Расписание - ClassKeeper</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/navbar.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand"><h2>🎓 ClassKeeper</h2></div>
+        <div class="navbar-menu">
+            <a href="/pages/dashboard.html">Главная</a>
+            <a href="/pages/users.html">Пользователи</a>
+            <a href="/pages/subjects.html">Предметы</a>
+            <a href="/pages/classes.html">Классы</a>
+            <a href="/pages/schedule.html" class="active">Расписание</a>
+            <a href="/pages/grades.html">Оценки</a>
+            <a href="/pages/attendance.html">Посещаемость</a>
+            <a href="/pages/homework.html">Домашние задания</a>
+            <a href="/pages/announcements.html">Объявления</a>
+            <a href="/pages/analytics.html">Аналитика</a>
+        </div>
+        <div class="navbar-user">
+            <span id="user-name"></span>
+            <button onclick="logout()" class="btn btn-secondary">Выход</button>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <div class="dashboard-header">
+            <h1>📅 Расписание</h1>
+            <button onclick="openCreateModal()" class="btn btn-primary">➕ Добавить урок</button>
+        </div>
+
+        <div class="filter-bar">
+            <select id="class-filter" onchange="loadSchedule()">
+                <option value="">Выберите класс</option>
+            </select>
+        </div>
+
+        <div id="schedule-container"></div>
+    </div>
+
+    <div id="create-modal" class="modal">
+        <div class="modal-content">
+            <h2>Добавить урок</h2>
+            <form id="create-form">
+                <div class="form-group">
+                    <label>Класс *</label>
+                    <select id="class-id" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Предмет *</label>
+                    <select id="subject-id" required></select>
+                </div>
+                <div class="form-group">
+                    <label>День недели *</label>
+                    <select id="day-of-week" required>
+                        <option value="Понедельник">Понедельник</option>
+                        <option value="Вторник">Вторник</option>
+                        <option value="Среда">Среда</option>
+                        <option value="Четверг">Четверг</option>
+                        <option value="Пятница">Пятница</option>
+                        <option value="Суббота">Суббота</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Номер урока *</label>
+                    <input type="number" id="lesson-number" min="1" max="10" required>
+                </div>
+                <div class="form-group">
+                    <label>Время начала *</label>
+                    <input type="time" id="start-time" required>
+                </div>
+                <div class="form-group">
+                    <label>Время окончания *</label>
+                    <input type="time" id="end-time" required>
+                </div>
+                <div class="form-group">
+                    <label>Кабинет</label>
+                    <input type="text" id="room-number" placeholder="201">
+                </div>
+                <div class="btn-group">
+                    <button type="submit" class="btn btn-primary">Добавить</button>
+                    <button type="button" onclick="closeCreateModal()" class="btn btn-secondary">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api';
+        let token = localStorage.getItem('token');
+        if (!token) window.location.href = '/';
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadClasses();
+        });
+
+        async function loadClasses() {
+            const response = await fetch(`${API_BASE}/classes`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                const select = document.getElementById('class-filter');
+                data.classes.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name;
+                    select.appendChild(opt);
+                });
+            }
+        }
+
+        async function loadSchedule() {
+            const classId = document.getElementById('class-filter').value;
+            if (!classId) return;
+
+            const response = await fetch(`${API_BASE}/schedules/class/${classId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                renderSchedule(data.schedule || {});
+            }
+        }
+
+        function renderSchedule(schedule) {
+            const container = document.getElementById('schedule-container');
+            const days = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
+            
+            if (Object.keys(schedule).length === 0) {
+                container.innerHTML = '<p style="text-align:center;color:#999;margin-top:40px;">Расписание пока не составлено</p>';
+                return;
+            }
+
+            container.innerHTML = days.map(day => {
+                const lessons = schedule[day] || [];
+                return `
+                    <div style="background:white;border-radius:12px;padding:20px;margin:15px 0;">
+                        <h3>${day}</h3>
+                        ${lessons.length === 0 ? '<p style="color:#999;">Нет уроков</p>' : `
+                            <div style="display:grid;gap:10px;margin-top:10px;">
+                                ${lessons.map(l => `
+                                    <div style="border-left:4px solid #667eea;padding:10px;background:#f8f9fa;border-radius:8px;">
+                                        <strong>${l.lesson_number}. ${l.subject?.name || 'Предмет'}</strong><br>
+                                        <span style="color:#666;">
+                                            ${l.start_time ? l.start_time.substring(11, 16) : ''} - ${l.end_time ? l.end_time.substring(11, 16) : ''}
+                                            ${l.room_number ? `| Каб. ${l.room_number}` : ''}
+                                        </span>
+                                        <button onclick="deleteSchedule(${l.id})" class="btn btn-sm" style="background:#ff6b6b;float:right;">🗑️</button>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function openCreateModal() {
+            const classesRes = await fetch(`${API_BASE}/classes`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (classesRes.ok) {
+                const data = await classesRes.json();
+                const select = document.getElementById('class-id');
+                select.innerHTML = '<option value="">Выберите класс</option>';
+                data.classes.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name;
+                    select.appendChild(opt);
+                });
+            }
+
+            const subjectsRes = await fetch(`${API_BASE}/subjects`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (subjectsRes.ok) {
+                const data = await subjectsRes.json();
+                const select = document.getElementById('subject-id');
+                select.innerHTML = '<option value="">Выберите предмет</option>';
+                data.subjects.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = s.name;
+                    select.appendChild(opt);
+                });
+            }
+
+            document.getElementById('create-modal').style.display = 'block';
+        }
+
+        function closeCreateModal() {
+            document.getElementById('create-modal').style.display = 'none';
+            document.getElementById('create-form').reset();
+        }
+
+        document.getElementById('create-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const scheduleData = {
+                class_id: parseInt(document.getElementById('class-id').value),
+                subject_id: parseInt(document.getElementById('subject-id').value),
+                day_of_week: document.getElementById('day-of-week').value,
+                lesson_number: parseInt(document.getElementById('lesson-number').value),
+                start_time: document.getElementById('start-time').value,
+                end_time: document.getElementById('end-time').value,
+                room_number: document.getElementById('room-number').value
+            };
+
+            const response = await fetch(`${API_BASE}/schedules`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(scheduleData)
+            });
+
+            if (response.ok) {
+                alert('✅ Урок добавлен!');
+                closeCreateModal();
+                loadSchedule();
+            } else {
+                const error = await response.json();
+                alert('❌ Ошибка: ' + (error.error || 'Не удалось добавить'));
+            }
+        });
+
+        async function deleteSchedule(id) {
+            if (!confirm('Удалить урок?')) return;
+
+            const response = await fetch(`${API_BASE}/schedules/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                alert('✅ Урок удалён!');
+                loadSchedule();
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Посещаемость - ClassKeeper</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/navbar.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand"><h2>🎓 ClassKeeper</h2></div>
+        <div class="navbar-menu">
+            <a href="/pages/dashboard.html">Главная</a>
+            <a href="/pages/users.html">Пользователи</a>
+            <a href="/pages/subjects.html">Предметы</a>
+            <a href="/pages/classes.html">Классы</a>
+            <a href="/pages/schedule.html">Расписание</a>
+            <a href="/pages/grades.html">Оценки</a>
+            <a href="/pages/attendance.html" class="active">Посещаемость</a>
+            <a href="/pages/homework.html">Домашние задания</a>
+            <a href="/pages/announcements.html">Объявления</a>
+            <a href="/pages/analytics.html">Аналитика</a>
+        </div>
+        <div class="navbar-user">
+            <span id="user-name"></span>
+            <button onclick="logout()" class="btn btn-secondary">Выход</button>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <h1>✅ Посещаемость</h1>
+
+        <div class="filter-bar">
+            <select id="class-filter" onchange="loadStudents()">
+                <option value="">Выберите класс</option>
+            </select>
+            <input type="date" id="date-filter" onchange="loadStudents()">
+            <button onclick="markAll('present')" class="btn btn-success">Все присутствуют</button>
+        </div>
+
+        <div id="students-list"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api';
+        let token = localStorage.getItem('token');
+        if (!token) window.location.href = '/';
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            document.getElementById('date-filter').valueAsDate = new Date();
+            await loadClasses();
+        });
+
+        async function loadClasses() {
+            const response = await fetch(`${API_BASE}/classes`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                const select = document.getElementById('class-filter');
+                data.classes.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name;
+                    select.appendChild(opt);
+                });
+            }
+        }
+
+        async function loadStudents() {
+            const classId = document.getElementById('class-filter').value;
+            if (!classId) return;
+
+            const response = await fetch(`${API_BASE}/classes/${classId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                renderStudents(data.class.students || []);
+            }
+        }
+
+        function renderStudents(students) {
+            const container = document.getElementById('students-list');
+            if (students.length === 0) {
+                container.innerHTML = '<p style="text-align:center;color:#999;">В классе нет учеников</p>';
+                return;
+            }
+
+            container.innerHTML = `
+                <table style="width:100%;background:white;border-radius:8px;margin-top:20px;">
+                    <thead>
+                        <tr>
+                            <th>Ученик</th>
+                            <th>Статус</th>
+                            <th>Комментарий</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${students.map(s => `
+                            <tr>
+                                <td>${s.last_name} ${s.first_name}</td>
+                                <td>
+                                    <select id="status-${s.id}" style="padding:8px;border-radius:5px;">
+                                        <option value="present">✅ Присутствует</option>
+                                        <option value="absent">❌ Отсутствует</option>
+                                        <option value="late">⏰ Опоздал</option>
+                                        <option value="excused">📝 Уважительная</option>
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="text" id="comment-${s.id}" placeholder="Комментарий" style="padding:8px;width:200px;border-radius:5px;">
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+                <button onclick="saveAttendance()" class="btn btn-primary" style="margin-top:20px;width:100%;">💾 Сохранить посещаемость</button>
+            `;
+        }
+
+        async function markAll(status) {
+            const selects = document.querySelectorAll('[id^="status-"]');
+            selects.forEach(s => s.value = status);
+        }
+
+        async function saveAttendance() {
+            const classId = parseInt(document.getElementById('class-filter').value);
+            const date = document.getElementById('date-filter').value;
+            
+            const response = await fetch(`${API_BASE}/classes/${classId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            const students = data.class.students || [];
+
+            const records = students.map(s => ({
+                student_id: s.id,
+                class_id: classId,
+                date: date,
+                status: document.getElementById(`status-${s.id}`).value,
+                comment: document.getElementById(`comment-${s.id}`).value
+            }));
+
+            const saveResponse = await fetch(`${API_BASE}/attendance/bulk`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ records })
+            });
+
+            if (saveResponse.ok) {
+                alert('✅ Посещаемость сохранена!');
+            } else {
+                const error = await saveResponse.json();
+                alert('❌ Ошибка: ' + (error.error || 'Не удалось сохранить'));
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>

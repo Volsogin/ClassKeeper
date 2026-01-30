@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Родители-Дети - ClassKeeper</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand"><h2>🎓 ClassKeeper</h2></div>
+        <div class="navbar-menu"></div>
+        <div class="navbar-user">
+            <span id="user-name"></span>
+            <button onclick="logout()" class="btn btn-secondary">Выход</button>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <div class="dashboard-header">
+            <h1>👨‍👩‍👧 Связь Родителей и Детей</h1>
+        </div>
+
+        <div style="background:white;border-radius:12px;padding:30px;margin-bottom:30px;">
+            <h2>Создать связь</h2>
+            <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:15px;align-items:end;">
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;">Родитель</label>
+                    <select id="parent-select" style="padding:10px;width:100%;border:1px solid #ddd;border-radius:8px;">
+                        <option value="">Загрузка...</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;">Ученик</label>
+                    <select id="student-select" style="padding:10px;width:100%;border:1px solid #ddd;border-radius:8px;">
+                        <option value="">Загрузка...</option>
+                    </select>
+                </div>
+                <button onclick="createLink()" class="btn btn-primary" style="height:44px;padding:0 20px;white-space:nowrap;">➕ Связать</button>
+            </div>
+        </div>
+
+        <div style="background:white;border-radius:12px;padding:30px;">
+            <h2>Текущие связи</h2>
+            <div id="links-list"></div>
+        </div>
+    </div>
+
+    <script src="/js/navbar.js"></script>
+    <script>
+        const API_BASE = 'http://localhost:8080/api';
+        let token = localStorage.getItem('token');
+        if (!token) window.location.href = '/';
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadParents();
+            await loadStudents();
+            await loadLinks();
+        });
+
+        async function loadParents() {
+            const response = await fetch(`${API_BASE}/users?role=parent`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                const select = document.getElementById('parent-select');
+                if (data.users && data.users.length > 0) {
+                    select.innerHTML = '<option value="">Выберите родителя</option>' +
+                        data.users.map(u => `<option value="${u.id}">${u.last_name} ${u.first_name}</option>`).join('');
+                } else {
+                    select.innerHTML = '<option value="">Нет родителей</option>';
+                }
+            }
+        }
+
+        async function loadStudents() {
+            const response = await fetch(`${API_BASE}/users?role=student`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                const select = document.getElementById('student-select');
+                if (data.users && data.users.length > 0) {
+                    select.innerHTML = '<option value="">Выберите ученика</option>' +
+                        data.users.map(u => `<option value="${u.id}">${u.last_name} ${u.first_name}</option>`).join('');
+                } else {
+                    select.innerHTML = '<option value="">Нет учеников</option>';
+                }
+            }
+        }
+
+        async function loadLinks() {
+            const response = await fetch(`${API_BASE}/parent-student-links`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            const container = document.getElementById('links-list');
+            
+            if (response.ok) {
+                const data = await response.json();
+                const links = data.links || [];
+                
+                if (links.length === 0) {
+                    container.innerHTML = '<p style="text-align:center;color:#999;padding:40px;">Связей пока нет</p>';
+                    return;
+                }
+
+                container.innerHTML = `
+                    <table style="width:100%;">
+                        <thead>
+                            <tr>
+                                <th>Родитель</th>
+                                <th>Ученик</th>
+                                <th>Класс ученика</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${links.map(link => `
+                                <tr>
+                                    <td>${link.parent?.last_name} ${link.parent?.first_name}</td>
+                                    <td>${link.student?.last_name} ${link.student?.first_name}</td>
+                                    <td>${link.student_class || '-'}</td>
+                                    <td>
+                                        <button onclick="deleteLink(${link.id})" class="btn btn-sm" style="background:#ff6b6b;">
+                                            🗑️ Удалить
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } else {
+                container.innerHTML = '<p style="text-align:center;color:#999;padding:40px;">Ошибка загрузки связей</p>';
+            }
+        }
+
+        async function createLink() {
+            const parentId = parseInt(document.getElementById('parent-select').value);
+            const studentId = parseInt(document.getElementById('student-select').value);
+
+            if (!parentId || !studentId) {
+                alert('Выберите родителя и ученика!');
+                return;
+            }
+
+            const response = await fetch(`${API_BASE}/parent-student-links`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ parent_id: parentId, student_id: studentId })
+            });
+
+            if (response.ok) {
+                alert('✅ Связь создана!');
+                loadLinks();
+            } else {
+                const error = await response.json();
+                alert('❌ Ошибка: ' + (error.error || 'Не удалось создать связь'));
+            }
+        }
+
+        async function deleteLink(id) {
+            if (!confirm('Удалить связь?')) return;
+
+            const response = await fetch(`${API_BASE}/parent-student-links/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                alert('✅ Связь удалена!');
+                loadLinks();
+            } else {
+                alert('❌ Ошибка удаления');
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>
