@@ -5,7 +5,6 @@ import (
 	"classkeeper/internal/models"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -51,32 +50,14 @@ func (h *ScheduleHandler) CreateSchedule(c *gin.Context) {
 		return
 	}
 
-	// Парсим время
-	var startTime, endTime *time.Time
-	if req.StartTime != "" {
-		t, err := time.Parse("15:04", req.StartTime)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid start time format (use HH:MM)"})
-			return
-		}
-		startTime = &t
-	}
-	if req.EndTime != "" {
-		t, err := time.Parse("15:04", req.EndTime)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid end time format (use HH:MM)"})
-			return
-		}
-		endTime = &t
-	}
-
+	// Парсим время - просто используем строки как есть
 	schedule := models.Schedule{
 		ClassID:      req.ClassID,
 		SubjectID:    req.SubjectID,
 		DayOfWeek:    req.DayOfWeek,
 		LessonNumber: req.LessonNumber,
-		StartTime:    startTime,
-		EndTime:      endTime,
+		StartTime:    req.StartTime,
+		EndTime:      req.EndTime,
 		RoomNumber:   req.RoomNumber,
 	}
 
@@ -234,32 +215,13 @@ func (h *ScheduleHandler) UpdateSchedule(c *gin.Context) {
 		return
 	}
 
-	// Парсим время
-	var startTime, endTime *time.Time
-	if req.StartTime != "" {
-		t, err := time.Parse("15:04", req.StartTime)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid start time format"})
-			return
-		}
-		startTime = &t
-	}
-	if req.EndTime != "" {
-		t, err := time.Parse("15:04", req.EndTime)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid end time format"})
-			return
-		}
-		endTime = &t
-	}
-
-	// Обновляем
+	// Обновляем - работаем со строками напрямую
 	schedule.ClassID = req.ClassID
 	schedule.SubjectID = req.SubjectID
 	schedule.DayOfWeek = req.DayOfWeek
 	schedule.LessonNumber = req.LessonNumber
-	schedule.StartTime = startTime
-	schedule.EndTime = endTime
+	schedule.StartTime = req.StartTime
+	schedule.EndTime = req.EndTime
 	schedule.RoomNumber = req.RoomNumber
 
 	if err := database.DB.Save(&schedule).Error; err != nil {

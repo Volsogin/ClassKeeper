@@ -5,12 +5,12 @@ import (
 	"classkeeper/internal/database"
 	"classkeeper/internal/middleware"
 	"classkeeper/internal/models"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type AuthHandler struct {
@@ -79,19 +79,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// Хешируем пароль
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
-		return
-	}
-
+	// ПРОСТОЕ СОХРАНЕНИЕ ПАРОЛЯ (без хеширования)
+	// ВНИМАНИЕ: Это небезопасно! Только для учебного проекта!
+	
 	// Создаем пользователя
 	user := models.User{
 		SchoolID:       req.SchoolID,
 		Username:       req.Username,
 		Email:          req.Email,
-		PasswordHash:   string(hashedPassword),
+		PasswordHash:   req.Password, // Сохраняем пароль как есть
 		Role:           req.Role,
 		FirstName:      req.FirstName,
 		LastName:       req.LastName,
@@ -121,22 +117,33 @@ func (h *AuthHandler) Register(c *gin.Context) {
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("❌ Login: JSON bind error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	log.Printf("🔐 Login attempt: username=%s", req.Username)
+
 	// Ищем пользователя
 	var user models.User
 	if err := database.DB.Where("username = ?", req.Username).First(&user).Error; err != nil {
+		log.Printf("❌ Login: User not found: %s", req.Username)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}
 
-	// Проверяем пароль
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+	log.Printf("✅ User found: id=%d, username=%s", user.ID, user.Username)
+	log.Printf("   Password from DB: %s", user.PasswordHash)
+	log.Printf("   Password from request: %s", req.Password)
+
+	// ПРОСТАЯ ПРОВЕРКА ПАРОЛЯ (без bcrypt)
+	if user.PasswordHash != req.Password {
+		log.Printf("❌ Login: Password mismatch for user %s", req.Username)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}
+
+	log.Printf("✅ Login successful for user: %s", req.Username)
 
 	// Генерируем токен
 	token, err := h.generateToken(&user)
